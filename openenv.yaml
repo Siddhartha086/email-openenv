@@ -1,0 +1,13 @@
+name: email-automation-env
+version: 1.0
+
+observation_space:
+  type: object
+
+action_space:
+  type: object
+
+tasks:
+  - name: easy_classification
+  - name: medium_routing
+  - name: hard_full_resolution
