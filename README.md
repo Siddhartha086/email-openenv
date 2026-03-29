@@ -1,22 +1,26 @@
-# Email Automation OpenEnv
+---
+title: Email OpenEnv Agent
+emoji: 📧
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
 
-## Overview
-Simulates real-world email triage and resolution workflow using AI agent actions.
+# Email OpenEnv Agent
 
-## Actions
-- classify('urgent' | 'normal' | 'low')
-- route('billing' | 'tech' | 'sales')
-- reply('text')
-- resolve()
+This is an automated email handling agent built using OpenEnv.
 
-## Tasks
-- Easy: classify email
-- Medium: classify + route
-- Hard: full resolution
+## Features
+- Classify emails
+- Route emails
+- Generate replies
+- Resolve issues
 
-## Run
-docker build -t email-env .
-docker run -p 7860:7860 email-env
+## API Endpoint
 
-## Test
-python inference.py
+POST /reset
+
+Example:
+```bash
+curl -X POST https://your-space-url/reset -H "Content-Type: application/json" -d '{}'
