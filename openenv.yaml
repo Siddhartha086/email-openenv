@@ -1,4 +1,7 @@
-name: email-openenv-agent
-description: Email triage OpenEnv environment
+id: email_openenv
+name: Email OpenEnv Agent
+description: Email automation agent using OpenEnv
 
-entry_point: main.pycd 
+entrypoint: main.py
+
+env_class: email_openenv.env.environment.EmailOpenEnv
