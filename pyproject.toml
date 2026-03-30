@@ -1,9 +1,13 @@
 [project]
-name = "email-openenv"
+name = "email_openenv"
 version = "0.1.0"
 description = "Email automation OpenEnv agent"
 authors = [{ name = "Siddhartha" }]
 dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["email_openenv*"]
 
 [build-system]
 requires = ["setuptools", "wheel"]
