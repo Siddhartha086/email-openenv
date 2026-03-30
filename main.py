@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from environment import EmailOpenEnv
+
+from env.environment import EmailOpenEnv  # ✅ FIXED IMPORT
 
 app = FastAPI()
-
 env = EmailOpenEnv()
 
 
