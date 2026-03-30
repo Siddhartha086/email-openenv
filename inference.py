@@ -1,21 +1,18 @@
 import requests
-import os 
 
 BASE = "https://sidtheslayer-email-openenv-agent.hf.space"
 
 
 def run():
+    r = requests.post(f"{BASE}/reset")
+    data = r.json()
 
-    # Reset
-    r = requests.post(f"{BASE_URL}/reset")
-    obs = r.json()["observation"]
-
+    obs = data["observation"]
     done = False
     total_reward = 0
 
     while not done:
         action_type = obs["available_actions"][0]
-
         action = {"type": action_type}
 
         if action_type == "classify":
@@ -27,10 +24,7 @@ def run():
         elif action_type == "reply":
             action["response"] = "We are resolving your issue"
 
-        elif action_type == "resolve":
-            pass
-
-        r = requests.post(f"{BASE_URL}/step", json={"action": action})
+        r = requests.post(f"{BASE}/step", json=action)
         data = r.json()
 
         obs = data["observation"]

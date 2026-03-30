@@ -1,7 +1,7 @@
-id: email_openenv
-name: Email OpenEnv Agent
-description: Email automation agent using OpenEnv
-
-entrypoint: main.py
-
-env_class: email_openenv.env.environment.EmailOpenEnv
+title: Email OpenEnv Agent
+emoji: 📧
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: main.py
+pinned: false

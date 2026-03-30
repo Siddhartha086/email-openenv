@@ -1,14 +1,9 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-
-from email_openenv.env.environment import EmailOpenEnv
+from email_openenv.environment import EmailOpenEnv
+from email_openenv.models import ActionRequest
 
 app = FastAPI()
 env = EmailOpenEnv()
-
-
-class ActionRequest(BaseModel):
-    action: dict
 
 
 @app.get("/")
@@ -18,26 +13,14 @@ def root():
 
 @app.post("/reset")
 def reset():
-    obs = env.reset()
-    return {
-        "observation": obs,
-        "reward": 0.0,
-        "done": False,
-        "info": {}
-    }
+    return env.reset()
 
 
 @app.post("/step")
-def step(req: ActionRequest):
-    obs, reward, done, info = env.step(req.action)
-    return {
-        "observation": obs,
-        "reward": reward,
-        "done": done,
-        "info": info
-    }
+def step(action: ActionRequest):
+    return env.step(action.dict())
 
 
 @app.get("/state")
 def state():
-    return env.state()
+    return env.state
