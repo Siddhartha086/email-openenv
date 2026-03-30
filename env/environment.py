@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
+import random
 
 
 # -------------------------
@@ -29,9 +30,15 @@ class EmailEnv:
         self.reset()
 
     def reset(self):
+        emails = [
+            "Need pricing details",
+            "Payment failed but money deducted",
+            "App crashing on login"
+        ]
+
         self.state = {
             "goal": "Handle the email end-to-end correctly",
-            "email_content": "Payment failed but money deducted",
+            "email_content": random.choice(emails),
             "current_stage": "start",
             "history": [],
             "last_action_error": None,
@@ -46,17 +53,37 @@ class EmailEnv:
             last_action_error=None
         )
 
+    def _build_obs(self):
+        return Observation(
+            goal=self.state["goal"],
+            email_content=self.state["email_content"],
+            current_stage=self.state["current_stage"],
+            history=self.state["history"],
+            available_actions=["classify", "route", "reply", "resolve"],
+            last_action_error=self.state["last_action_error"]
+        )
+
     def step(self, action_dict):
-        action = Action(**action_dict)
+        # 🔥 HARD SAFETY (fixes all malformed inputs)
+        if not isinstance(action_dict, dict):
+            return self._build_obs().dict(), -0.5, False, {}
+
+        action_type = action_dict.get("type")
 
         reward = 0.0
         done = False
         info = {}
 
+        valid_actions = ["classify", "route", "reply", "resolve"]
+
+        if action_type not in valid_actions:
+            self.state["last_action_error"] = "Invalid action"
+            return self._build_obs().dict(), -0.5, False, {}
+
         # -------------------------
         # CLASSIFY
         # -------------------------
-        if action.type == "classify":
+        if action_type == "classify":
             if self.state["current_stage"] != "start":
                 self.state["last_action_error"] = "Already classified"
                 reward -= 0.1
@@ -69,7 +96,7 @@ class EmailEnv:
         # -------------------------
         # ROUTE
         # -------------------------
-        elif action.type == "route":
+        elif action_type == "route":
             if self.state["current_stage"] != "classified":
                 self.state["last_action_error"] = "Expected classify"
                 reward -= 0.2
@@ -82,7 +109,7 @@ class EmailEnv:
         # -------------------------
         # REPLY
         # -------------------------
-        elif action.type == "reply":
+        elif action_type == "reply":
             if self.state["current_stage"] != "routed":
                 self.state["last_action_error"] = "Expected route"
                 reward -= 0.2
@@ -95,7 +122,7 @@ class EmailEnv:
         # -------------------------
         # RESOLVE
         # -------------------------
-        elif action.type == "resolve":
+        elif action_type == "resolve":
             if self.state["current_stage"] != "replied":
                 self.state["last_action_error"] = "Expected reply"
                 reward -= 0.2
@@ -106,21 +133,16 @@ class EmailEnv:
                 reward += 1.0
                 done = True
 
-        else:
-            self.state["last_action_error"] = "Invalid action"
-            reward -= 0.5
+        # -------------------------
+        # BONUS + PENALTY
+        # -------------------------
+        if done and self.state["history"] == ["classified", "routed", "replied", "resolved"]:
+            reward += 0.5
 
-        # ✅ CRITICAL FIX (no **state)
-        obs = Observation(
-            goal=self.state["goal"],
-            email_content=self.state["email_content"],
-            current_stage=self.state["current_stage"],
-            history=self.state["history"],
-            available_actions=["classify", "route", "reply", "resolve"],
-            last_action_error=self.state["last_action_error"]
-        )
+        if len(self.state["history"]) > 6:
+            reward -= 0.3
 
-        return obs.dict(), reward, done, info
+        return self._build_obs().dict(), reward, done, info
 
     def state(self):
         return self.state

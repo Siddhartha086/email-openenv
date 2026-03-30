@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from env.environment import EmailEnv
 
 app = FastAPI()
@@ -22,11 +22,16 @@ def reset():
 
 
 @app.post("/step")
-def step(action: dict):
-    # ✅ Handles BOTH formats (validator safe)
-    actual_action = action.get("action", action)
+async def step(request: Request):
+    body = await request.json()
 
-    obs, reward, done, info = env.step(actual_action)
+    # 🔥 HARD FIX (handles ANY format)
+    if "action" in body:
+        action = body["action"]
+    else:
+        action = body
+
+    obs, reward, done, info = env.step(action)
 
     return {
         "observation": obs,

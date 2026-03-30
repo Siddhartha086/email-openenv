@@ -6,9 +6,8 @@ BASE = "https://sidtheslayer-email-openenv-agent.hf.space"
 def run():
     total_reward = 0
 
-    print("Resetting...")
-    r = requests.post(f"{BASE}/reset")
-    print(r.json())
+    print("Reset...")
+    print(requests.post(f"{BASE}/reset").json())
 
     steps = [
         {"type": "classify", "label": "pricing inquiry"},
@@ -18,8 +17,7 @@ def run():
     ]
 
     for s in steps:
-        r = requests.post(f"{BASE}/step", json={"action": s})
-        res = r.json()
+        res = requests.post(f"{BASE}/step", json={"action": s}).json()
 
         print("\nSTEP:", s["type"])
         print("Reward:", res["reward"])
@@ -27,10 +25,13 @@ def run():
 
         total_reward += res["reward"]
 
+        if res["reward"] < 0:
+            print("⚠️ Wrong step")
+
         if res["done"]:
             break
 
-    print("\nTOTAL REWARD:", total_reward)
+    print("\nTOTAL:", total_reward)
 
 
 if __name__ == "__main__":
