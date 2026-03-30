@@ -1,0 +1,10 @@
+[project]
+name = "email-openenv"
+version = "0.1.0"
+description = "Email automation OpenEnv agent"
+authors = [{ name = "Siddhartha" }]
+dependencies = []
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
