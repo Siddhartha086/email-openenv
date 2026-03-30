@@ -1,30 +1,27 @@
 import requests
 
-BASE_URL = "https://sidtheslayer-email-openenv-agent.hf.space"
+BASE = "https://sidtheslayer-email-openenv-agent.hf.space"
 
 
-def run_episode():
-    print("Resetting environment...")
-    r = requests.post(f"{BASE_URL}/reset")
-    data = r.json()
-
+def run():
     total_reward = 0
+
+    print("Resetting...")
+    r = requests.post(f"{BASE}/reset")
+    print(r.json())
 
     steps = [
         {"type": "classify", "label": "pricing inquiry"},
         {"type": "route", "department": "sales"},
-        {"type": "reply", "response": "Our team will contact you shortly."},
+        {"type": "reply", "response": "We will help you shortly."},
         {"type": "resolve"}
     ]
 
-    for step in steps:
-        r = requests.post(
-            f"{BASE_URL}/step",
-            json={"action": step}
-        )
+    for s in steps:
+        r = requests.post(f"{BASE}/step", json={"action": s})
         res = r.json()
 
-        print("\nStep:", step["type"])
+        print("\nSTEP:", s["type"])
         print("Reward:", res["reward"])
         print("Stage:", res["observation"]["current_stage"])
 
@@ -33,8 +30,8 @@ def run_episode():
         if res["done"]:
             break
 
-    print("\nTotal reward:", total_reward)
+    print("\nTOTAL REWARD:", total_reward)
 
 
 if __name__ == "__main__":
-    run_episode()
+    run()

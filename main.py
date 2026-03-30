@@ -23,7 +23,7 @@ def reset():
 
 @app.post("/step")
 def step(action: dict):
-    # ✅ CRITICAL FIX (your main bug)
+    # ✅ Handles BOTH formats (validator safe)
     actual_action = action.get("action", action)
 
     obs, reward, done, info = env.step(actual_action)

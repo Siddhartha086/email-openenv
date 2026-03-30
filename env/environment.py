@@ -31,14 +31,19 @@ class EmailEnv:
     def reset(self):
         self.state = {
             "goal": "Handle the email end-to-end correctly",
-            "email_content": "Need info about pricing plans",
+            "email_content": "Payment failed but money deducted",
             "current_stage": "start",
             "history": [],
             "last_action_error": None,
         }
+
         return Observation(
-            **self.state,
-            available_actions=["classify", "route", "reply", "resolve"]
+            goal=self.state["goal"],
+            email_content=self.state["email_content"],
+            current_stage=self.state["current_stage"],
+            history=self.state["history"],
+            available_actions=["classify", "route", "reply", "resolve"],
+            last_action_error=None
         )
 
     def step(self, action_dict):
@@ -105,9 +110,14 @@ class EmailEnv:
             self.state["last_action_error"] = "Invalid action"
             reward -= 0.5
 
+        # ✅ CRITICAL FIX (no **state)
         obs = Observation(
-            **self.state,
-            available_actions=["classify", "route", "reply", "resolve"]
+            goal=self.state["goal"],
+            email_content=self.state["email_content"],
+            current_stage=self.state["current_stage"],
+            history=self.state["history"],
+            available_actions=["classify", "route", "reply", "resolve"],
+            last_action_error=self.state["last_action_error"]
         )
 
         return obs.dict(), reward, done, info
