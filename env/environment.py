@@ -1,24 +1,4 @@
-import random
-from env.models import Observation
-
-
-EMAILS = [
-    {
-        "text": "Payment failed but money deducted",
-        "classification": "urgent",
-        "route": "billing"
-    },
-    {
-        "text": "App is crashing on login",
-        "classification": "urgent",
-        "route": "tech"
-    },
-    {
-        "text": "Need info about pricing plans",
-        "classification": "normal",
-        "route": "sales"
-    }
-]
+from typing import Tuple, Dict, Any
 
 
 class EmailEnv:
@@ -26,84 +6,78 @@ class EmailEnv:
         self.reset()
 
     def reset(self):
-        self.sample = random.choice(EMAILS)
-
-        self.state_data = {
-            "stage": "start",
-            "email": self.sample["text"],
-            "classification": None,
-            "route": None,
-            "reply": None,
-            "history": []
-        }
-
+        self.current_stage = "start"
+        self.email_content = "Need info about pricing plans"
+        self.history = []
         return self._get_obs()
 
-    def step(self, action):
-        action_type = action.get("action_type")
-        payload = action.get("payload")
-
-        reward = 0.0
-        done = False
-        error = None
-
-        try:
-            if self.state_data["stage"] == "start":
-                if action_type == "classify":
-                    self.state_data["classification"] = payload
-                    self.state_data["stage"] = "classified"
-
-                    if payload == self.sample["classification"]:
-                        reward += 0.3
-                else:
-                    error = "Expected classify"
-                    reward -= 0.2
-
-            elif self.state_data["stage"] == "classified":
-                if action_type == "route":
-                    self.state_data["route"] = payload
-                    self.state_data["stage"] = "routed"
-
-                    if payload == self.sample["route"]:
-                        reward += 0.3
-                else:
-                    error = "Expected route"
-                    reward -= 0.2
-
-            elif self.state_data["stage"] == "routed":
-                if action_type == "reply":
-                    self.state_data["reply"] = payload
-                    self.state_data["stage"] = "replied"
-                    reward += 0.2
-                else:
-                    error = "Expected reply"
-                    reward -= 0.2
-
-            elif self.state_data["stage"] == "replied":
-                if action_type == "resolve":
-                    reward += 0.2
-                    done = True
-                else:
-                    error = "Expected resolve"
-                    reward -= 0.2
-
-        except Exception as e:
-            error = str(e)
-            reward -= 0.2
-
-        self.state_data["history"].append(f"{action_type}:{payload}")
-
-        return self._get_obs(error), reward, done, {}
-
     def state(self):
-        return self.state_data
+        return {
+            "current_stage": self.current_stage,
+            "history": self.history,
+            "email": self.email_content
+        }
 
-    def _get_obs(self, error=None):
-        return Observation(
-            goal="Handle the email end-to-end correctly",
-            email_content=self.state_data["email"],
-            current_stage=self.state_data["stage"],
-            history=self.state_data["history"],
-            available_actions=["classify", "route", "reply", "resolve"],
-            last_action_error=error
-        )
+    def step(self, action: Dict[str, Any]) -> Tuple[Dict, float, bool, Dict]:
+        action_type = action.get("type")
+
+        # ❗ validate action exists
+        if not action_type:
+            return self._error("Missing action type", -0.2)
+
+        # ======================
+        # STAGE LOGIC
+        # ======================
+
+        if self.current_stage == "start":
+            if action_type != "classify":
+                return self._error("Expected classify", -0.2)
+
+            self.current_stage = "classified"
+            self.history.append("classify")
+            return self._success("Email classified", 0.3)
+
+        elif self.current_stage == "classified":
+            if action_type != "route":
+                return self._error("Expected route", -0.2)
+
+            self.current_stage = "routed"
+            self.history.append("route")
+            return self._success("Email routed", 0.3)
+
+        elif self.current_stage == "routed":
+            if action_type != "reply":
+                return self._error("Expected reply", -0.2)
+
+            self.current_stage = "replied"
+            self.history.append("reply")
+            return self._success("Replied to email", 0.3)
+
+        elif self.current_stage == "replied":
+            if action_type != "resolve":
+                return self._error("Expected resolve", -0.2)
+
+            self.current_stage = "done"
+            self.history.append("resolve")
+            return self._success("Task completed", 1.0, done=True)
+
+        return self._error("Invalid state", -0.5)
+
+    # ======================
+    # HELPERS
+    # ======================
+
+    def _get_obs(self):
+        return {
+            "goal": "Handle the email end-to-end correctly",
+            "email_content": self.email_content,
+            "current_stage": self.current_stage,
+            "history": self.history,
+            "available_actions": ["classify", "route", "reply", "resolve"],
+        }
+
+    def _success(self, msg, reward, done=False):
+        return self._get_obs(), reward, done, {"message": msg}
+
+    def _error(self, msg, reward):
+        return self._get_obs(), reward, False, {"error": msg}
