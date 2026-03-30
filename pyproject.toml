@@ -5,7 +5,16 @@ description = "Email automation OpenEnv agent"
 authors = [{ name = "Siddhartha" }]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "requests",
+    "openenv>=0.1.13"
+]
+
+[project.scripts]
+server = "server.app:app"
 
 [tool.setuptools]
 packages = ["email_openenv"]
