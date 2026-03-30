@@ -1,50 +1,40 @@
-import os
 import requests
 
-BASE_URL = "http://localhost:7860"
+BASE_URL = "https://sidtheslayer-email-openenv-agent.hf.space"
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL = os.getenv("MODEL_NAME")
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
 
-headers = {
-    "Authorization": f"Bearer {HF_TOKEN}"
-}
-
-def generate_response(email):
-    prompt = f"Reply professionally to this email:\n{email}"
-
-    res = requests.post(API_URL, headers=headers, json={"inputs": prompt})
-
-    try:
-        return res.json()[0]["generated_text"]
-    except:
-        return "Sorry, we will help you."
-
-def run():
-    total_reward = 0
-
+def run_episode():
+    print("Resetting environment...")
     r = requests.post(f"{BASE_URL}/reset")
     data = r.json()
 
-    done = False
+    total_reward = 0
 
-    while not done:
-        email = data["observation"]["email"]
+    steps = [
+        {"type": "classify", "label": "pricing inquiry"},
+        {"type": "route", "department": "sales"},
+        {"type": "reply", "response": "Our team will contact you shortly."},
+        {"type": "resolve"}
+    ]
 
-        response = generate_response(email)
-
+    for step in steps:
         r = requests.post(
             f"{BASE_URL}/step",
-            json={"response": response}
+            json={"action": step}
         )
+        res = r.json()
 
-        data = r.json()
-        total_reward += data["reward"]
-        done = data["done"]
+        print("\nStep:", step["type"])
+        print("Reward:", res["reward"])
+        print("Stage:", res["observation"]["current_stage"])
 
-    print("Final Score:", total_reward)
+        total_reward += res["reward"]
+
+        if res["done"]:
+            break
+
+    print("\nTotal reward:", total_reward)
 
 
 if __name__ == "__main__":
-    run()
+    run_episode()

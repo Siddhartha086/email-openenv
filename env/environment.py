@@ -1,83 +1,116 @@
-from typing import Tuple, Dict, Any
+from pydantic import BaseModel
+from typing import List, Optional
 
 
+# -------------------------
+# Models
+# -------------------------
+class Observation(BaseModel):
+    goal: str
+    email_content: str
+    current_stage: str
+    history: List[str]
+    available_actions: List[str]
+    last_action_error: Optional[str] = None
+
+
+class Action(BaseModel):
+    type: str
+    label: Optional[str] = None
+    department: Optional[str] = None
+    response: Optional[str] = None
+
+
+# -------------------------
+# Environment
+# -------------------------
 class EmailEnv:
     def __init__(self):
         self.reset()
 
     def reset(self):
-        self.current_stage = "start"
-        self.email_content = "Need info about pricing plans"
-        self.history = []
-        return self._get_obs()
+        self.state = {
+            "goal": "Handle the email end-to-end correctly",
+            "email_content": "Need info about pricing plans",
+            "current_stage": "start",
+            "history": [],
+            "last_action_error": None,
+        }
+        return Observation(
+            **self.state,
+            available_actions=["classify", "route", "reply", "resolve"]
+        )
+
+    def step(self, action_dict):
+        action = Action(**action_dict)
+
+        reward = 0.0
+        done = False
+        info = {}
+
+        # -------------------------
+        # CLASSIFY
+        # -------------------------
+        if action.type == "classify":
+            if self.state["current_stage"] != "start":
+                self.state["last_action_error"] = "Already classified"
+                reward -= 0.1
+            else:
+                self.state["current_stage"] = "classified"
+                self.state["history"].append("classified")
+                self.state["last_action_error"] = None
+                reward += 0.3
+
+        # -------------------------
+        # ROUTE
+        # -------------------------
+        elif action.type == "route":
+            if self.state["current_stage"] != "classified":
+                self.state["last_action_error"] = "Expected classify"
+                reward -= 0.2
+            else:
+                self.state["current_stage"] = "routed"
+                self.state["history"].append("routed")
+                self.state["last_action_error"] = None
+                reward += 0.3
+
+        # -------------------------
+        # REPLY
+        # -------------------------
+        elif action.type == "reply":
+            if self.state["current_stage"] != "routed":
+                self.state["last_action_error"] = "Expected route"
+                reward -= 0.2
+            else:
+                self.state["current_stage"] = "replied"
+                self.state["history"].append("replied")
+                self.state["last_action_error"] = None
+                reward += 0.3
+
+        # -------------------------
+        # RESOLVE
+        # -------------------------
+        elif action.type == "resolve":
+            if self.state["current_stage"] != "replied":
+                self.state["last_action_error"] = "Expected reply"
+                reward -= 0.2
+            else:
+                self.state["current_stage"] = "done"
+                self.state["history"].append("resolved")
+                self.state["last_action_error"] = None
+                reward += 1.0
+                done = True
+
+        else:
+            self.state["last_action_error"] = "Invalid action"
+            reward -= 0.5
+
+        obs = Observation(
+            **self.state,
+            available_actions=["classify", "route", "reply", "resolve"]
+        )
+
+        return obs.dict(), reward, done, info
 
     def state(self):
-        return {
-            "current_stage": self.current_stage,
-            "history": self.history,
-            "email": self.email_content
-        }
-
-    def step(self, action: Dict[str, Any]) -> Tuple[Dict, float, bool, Dict]:
-        action_type = action.get("type")
-
-        # ❗ validate action exists
-        if not action_type:
-            return self._error("Missing action type", -0.2)
-
-        # ======================
-        # STAGE LOGIC
-        # ======================
-
-        if self.current_stage == "start":
-            if action_type != "classify":
-                return self._error("Expected classify", -0.2)
-
-            self.current_stage = "classified"
-            self.history.append("classify")
-            return self._success("Email classified", 0.3)
-
-        elif self.current_stage == "classified":
-            if action_type != "route":
-                return self._error("Expected route", -0.2)
-
-            self.current_stage = "routed"
-            self.history.append("route")
-            return self._success("Email routed", 0.3)
-
-        elif self.current_stage == "routed":
-            if action_type != "reply":
-                return self._error("Expected reply", -0.2)
-
-            self.current_stage = "replied"
-            self.history.append("reply")
-            return self._success("Replied to email", 0.3)
-
-        elif self.current_stage == "replied":
-            if action_type != "resolve":
-                return self._error("Expected resolve", -0.2)
-
-            self.current_stage = "done"
-            self.history.append("resolve")
-            return self._success("Task completed", 1.0, done=True)
-
-        return self._error("Invalid state", -0.5)
-
-    # ======================
-    # HELPERS
-    # ======================
-
-    def _get_obs(self):
-        return {
-            "goal": "Handle the email end-to-end correctly",
-            "email_content": self.email_content,
-            "current_stage": self.current_stage,
-            "history": self.history,
-            "available_actions": ["classify", "route", "reply", "resolve"],
-        }
-
-    def _success(self, msg, reward, done=False):
-        return self._get_obs(), reward, done, {"message": msg}
-
-    def _error(self, msg, reward):
-        return self._get_obs(), reward, False, {"error": msg}
+        return self.state

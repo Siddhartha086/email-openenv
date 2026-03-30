@@ -6,7 +6,7 @@ env = EmailEnv()
 
 
 @app.get("/")
-def home():
+def root():
     return {"status": "API is running"}
 
 
@@ -14,7 +14,7 @@ def home():
 def reset():
     obs = env.reset()
     return {
-        "observation": obs,
+        "observation": obs.dict(),
         "reward": 0.0,
         "done": False,
         "info": {}
@@ -23,8 +23,10 @@ def reset():
 
 @app.post("/step")
 def step(action: dict):
-    # 🔥 IMPORTANT FIX: extract inner action
-    obs, reward, done, info = env.step(action.get("action", {}))
+    # ✅ CRITICAL FIX (your main bug)
+    actual_action = action.get("action", action)
+
+    obs, reward, done, info = env.step(actual_action)
 
     return {
         "observation": obs,
