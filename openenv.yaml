@@ -1,4 +1,4 @@
 name: email-openenv-agent
 description: Email triage OpenEnv environment
 
-entry_point: main.py
+entry_point: main.pycd 
