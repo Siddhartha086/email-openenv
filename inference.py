@@ -1,37 +1,45 @@
 import requests
+import os 
 
 BASE = "https://sidtheslayer-email-openenv-agent.hf.space"
 
 
 def run():
+
+    # Reset
+    r = requests.post(f"{BASE_URL}/reset")
+    obs = r.json()["observation"]
+
+    done = False
     total_reward = 0
 
-    print("Reset...")
-    print(requests.post(f"{BASE}/reset").json())
+    while not done:
+        action_type = obs["available_actions"][0]
 
-    steps = [
-        {"type": "classify", "label": "pricing inquiry"},
-        {"type": "route", "department": "sales"},
-        {"type": "reply", "response": "We will help you shortly."},
-        {"type": "resolve"}
-    ]
+        action = {"type": action_type}
 
-    for s in steps:
-        res = requests.post(f"{BASE}/step", json={"action": s}).json()
+        if action_type == "classify":
+            action["label"] = "billing"
 
-        print("\nSTEP:", s["type"])
-        print("Reward:", res["reward"])
-        print("Stage:", res["observation"]["current_stage"])
+        elif action_type == "route":
+            action["department"] = "billing"
 
-        total_reward += res["reward"]
+        elif action_type == "reply":
+            action["response"] = "We are resolving your issue"
 
-        if res["reward"] < 0:
-            print("⚠️ Wrong step")
+        elif action_type == "resolve":
+            pass
 
-        if res["done"]:
-            break
+        r = requests.post(f"{BASE_URL}/step", json={"action": action})
+        data = r.json()
 
-    print("\nTOTAL:", total_reward)
+        obs = data["observation"]
+        reward = data["reward"]
+        done = data["done"]
+
+        total_reward += reward
+
+    print("FINAL SCORE:", total_reward)
 
 
 if __name__ == "__main__":

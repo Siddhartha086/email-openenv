@@ -1,3 +1,4 @@
-name: email-openenv
-description: Email support simulation environment
-version: 1.0
+name: email-openenv-agent
+description: Email triage OpenEnv environment
+
+entry_point: main.py

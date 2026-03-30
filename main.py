@@ -1,8 +1,14 @@
-from fastapi import FastAPI, Request
-from env.environment import EmailEnv
+from fastapi import FastAPI
+from pydantic import BaseModel
+from environment import EmailOpenEnv
 
 app = FastAPI()
-env = EmailEnv()
+
+env = EmailOpenEnv()
+
+
+class ActionRequest(BaseModel):
+    action: dict
 
 
 @app.get("/")
@@ -14,7 +20,7 @@ def root():
 def reset():
     obs = env.reset()
     return {
-        "observation": obs.dict(),
+        "observation": obs,
         "reward": 0.0,
         "done": False,
         "info": {}
@@ -22,17 +28,8 @@ def reset():
 
 
 @app.post("/step")
-async def step(request: Request):
-    body = await request.json()
-
-    # 🔥 HARD FIX (handles ANY format)
-    if "action" in body:
-        action = body["action"]
-    else:
-        action = body
-
-    obs, reward, done, info = env.step(action)
-
+def step(req: ActionRequest):
+    obs, reward, done, info = env.step(req.action)
     return {
         "observation": obs,
         "reward": reward,

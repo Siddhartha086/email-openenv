@@ -1,148 +1,89 @@
-from pydantic import BaseModel
-from typing import List, Optional
-import random
+# environment.py
+
+from typing import Dict, Any
 
 
-# -------------------------
-# Models
-# -------------------------
-class Observation(BaseModel):
-    goal: str
-    email_content: str
-    current_stage: str
-    history: List[str]
-    available_actions: List[str]
-    last_action_error: Optional[str] = None
-
-
-class Action(BaseModel):
-    type: str
-    label: Optional[str] = None
-    department: Optional[str] = None
-    response: Optional[str] = None
-
-
-# -------------------------
-# Environment
-# -------------------------
-class EmailEnv:
+class EmailOpenEnv:
     def __init__(self):
         self.reset()
 
-    def reset(self):
-        emails = [
-            "Need pricing details",
-            "Payment failed but money deducted",
-            "App crashing on login"
-        ]
+    def reset(self) -> Dict[str, Any]:
+        self.current_stage = "start"
+        self.history = []
+        self.last_action_error = None
 
-        self.state = {
-            "goal": "Handle the email end-to-end correctly",
-            "email_content": random.choice(emails),
-            "current_stage": "start",
-            "history": [],
-            "last_action_error": None,
+        # sample email (can randomize later)
+        self.email_content = "Payment failed but money deducted"
+
+        return self._get_observation()
+
+    def state(self) -> Dict[str, Any]:
+        return self._get_observation()
+
+    def step(self, action: Dict[str, Any]):
+
+        # Define correct flow
+        expected_action = {
+            "start": "classify",
+            "classified": "route",
+            "routed": "reply",
+            "replied": "resolve"
         }
 
-        return Observation(
-            goal=self.state["goal"],
-            email_content=self.state["email_content"],
-            current_stage=self.state["current_stage"],
-            history=self.state["history"],
-            available_actions=["classify", "route", "reply", "resolve"],
-            last_action_error=None
-        )
-
-    def _build_obs(self):
-        return Observation(
-            goal=self.state["goal"],
-            email_content=self.state["email_content"],
-            current_stage=self.state["current_stage"],
-            history=self.state["history"],
-            available_actions=["classify", "route", "reply", "resolve"],
-            last_action_error=self.state["last_action_error"]
-        )
-
-    def step(self, action_dict):
-        # 🔥 HARD SAFETY (fixes all malformed inputs)
-        if not isinstance(action_dict, dict):
-            return self._build_obs().dict(), -0.5, False, {}
-
-        action_type = action_dict.get("type")
-
-        reward = 0.0
         done = False
-        info = {}
+        reward = 0.0
 
-        valid_actions = ["classify", "route", "reply", "resolve"]
+        correct_action = expected_action.get(self.current_stage)
 
-        if action_type not in valid_actions:
-            self.state["last_action_error"] = "Invalid action"
-            return self._build_obs().dict(), -0.5, False, {}
+        # ❌ Wrong action
+        if action.get("type") != correct_action:
+            self.last_action_error = f"Expected {correct_action}"
+            reward = -0.2
+            return self._get_observation(), reward, False, {}
 
-        # -------------------------
-        # CLASSIFY
-        # -------------------------
-        if action_type == "classify":
-            if self.state["current_stage"] != "start":
-                self.state["last_action_error"] = "Already classified"
-                reward -= 0.1
-            else:
-                self.state["current_stage"] = "classified"
-                self.state["history"].append("classified")
-                self.state["last_action_error"] = None
-                reward += 0.3
+        # ✅ Correct action → move forward
+        self.last_action_error = None
 
-        # -------------------------
-        # ROUTE
-        # -------------------------
-        elif action_type == "route":
-            if self.state["current_stage"] != "classified":
-                self.state["last_action_error"] = "Expected classify"
-                reward -= 0.2
-            else:
-                self.state["current_stage"] = "routed"
-                self.state["history"].append("routed")
-                self.state["last_action_error"] = None
-                reward += 0.3
+        if self.current_stage == "start":
+            self.current_stage = "classified"
+            reward = 0.3
+            self.history.append("classified")
 
-        # -------------------------
-        # REPLY
-        # -------------------------
-        elif action_type == "reply":
-            if self.state["current_stage"] != "routed":
-                self.state["last_action_error"] = "Expected route"
-                reward -= 0.2
-            else:
-                self.state["current_stage"] = "replied"
-                self.state["history"].append("replied")
-                self.state["last_action_error"] = None
-                reward += 0.3
+        elif self.current_stage == "classified":
+            self.current_stage = "routed"
+            reward = 0.5
+            self.history.append("routed")
 
-        # -------------------------
-        # RESOLVE
-        # -------------------------
-        elif action_type == "resolve":
-            if self.state["current_stage"] != "replied":
-                self.state["last_action_error"] = "Expected reply"
-                reward -= 0.2
-            else:
-                self.state["current_stage"] = "done"
-                self.state["history"].append("resolved")
-                self.state["last_action_error"] = None
-                reward += 1.0
-                done = True
+        elif self.current_stage == "routed":
+            self.current_stage = "replied"
+            reward = 0.7
+            self.history.append("replied")
 
-        # -------------------------
-        # BONUS + PENALTY
-        # -------------------------
-        if done and self.state["history"] == ["classified", "routed", "replied", "resolved"]:
-            reward += 0.5
+        elif self.current_stage == "replied":
+            self.current_stage = "resolved"
+            reward = 1.0
+            done = True
+            self.history.append("resolved")
 
-        if len(self.state["history"]) > 6:
-            reward -= 0.3
+        return self._get_observation(), reward, done, {}
 
-        return self._build_obs().dict(), reward, done, info
+    def _get_observation(self) -> Dict[str, Any]:
 
-    def state(self):
-        return self.state
+        expected_action = {
+            "start": "classify",
+            "classified": "route",
+            "routed": "reply",
+            "replied": "resolve",
+            "resolved": None
+        }
+
+        next_action = expected_action.get(self.current_stage)
+
+        return {
+            "goal": "Handle the email end-to-end correctly",
+            "email_content": self.email_content,
+            "current_stage": self.current_stage,
+            "history": self.history,
+            "available_actions": [next_action] if next_action else [],
+            "last_action_error": self.last_action_error
+        }
