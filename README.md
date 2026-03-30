@@ -72,6 +72,13 @@ API_BASE_URL
 
 ---
 
+
+## Reward Design
+The environment uses incremental reward shaping (0.3 → 0.5 → 0.7 → 1.0) to reflect partial task completion and discourage invalid transitions.
+
+## Real-world Relevance
+Simulates email triage workflows used in customer support systems (billing, technical, sales).
+
 ## Status
 
 Submission ready
