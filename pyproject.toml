@@ -3,12 +3,13 @@ name = "email_openenv"
 version = "0.1.0"
 description = "Email automation OpenEnv agent"
 authors = [{ name = "Siddhartha" }]
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = []
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["email_openenv*"]
+[tool.setuptools]
+packages = ["email_openenv"]
 
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
