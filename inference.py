@@ -2,6 +2,12 @@ import requests
 import os
 import sys
 
+
+
+if os.environ.get("RUN_ONCE") == "1":
+    sys.exit(0)
+
+
 # 🔹 PREVENT DOUBLE EXECUTION (HF issue fix)
 if hasattr(sys, "_already_ran"):
     exit()
