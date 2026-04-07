@@ -17,18 +17,26 @@ import time
 
 def run_agent_once():
     from inference import run
-    time.sleep(2)
+    print("🔥 STARTING INFERENCE...")
+    time.sleep(2)  # allow server startup
     run()
+    print("🔥 INFERENCE DONE")
 
 
-# 🔥 NEW LIFESPAN HANDLER (NO DEPRECATION)
+# 🔥 CORRECT LIFESPAN HANDLER (NO DAEMON ISSUE)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    threading.Thread(target=run_agent_once, daemon=True).start()
-    yield
+    thread = threading.Thread(target=run_agent_once)
+    thread.start()
+
+    yield  # app runs while thread executes
+
+    thread.join()  # ensure thread completes
 
 
+# Create app with lifespan
 app = FastAPI(lifespan=lifespan)
+
 env = EmailOpenEnv()
 
 
@@ -38,13 +46,16 @@ env = EmailOpenEnv()
 def root():
     return {"status": "API is running"}
 
+
 @app.post("/reset")
 def reset():
     return env.reset()
 
+
 @app.post("/step")
 def step(action: ActionRequest):
     return env.step(action.dict())
+
 
 @app.get("/state")
 def state():
