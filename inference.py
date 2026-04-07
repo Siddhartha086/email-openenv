@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://localhost:7860"
+BASE_URL = "https://sidtheslayer-email-openenv-agent.hf.space"
 
 TASK_NAME = "email_handling"
 ENV_NAME = "email_openenv"
