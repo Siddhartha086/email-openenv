@@ -5,14 +5,32 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from email_openenv.environment import EmailOpenEnv
 from email_openenv.models import ActionRequest
 
 import threading
 import time
 
-app = FastAPI()
+
+# ---------------- INFERENCE RUNNER ---------------- #
+
+def run_agent_once():
+    from inference import run
+    time.sleep(2)
+    run()
+
+
+# 🔥 NEW LIFESPAN HANDLER (NO DEPRECATION)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=run_agent_once, daemon=True).start()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 env = EmailOpenEnv()
+
 
 # ---------------- API ---------------- #
 
@@ -31,17 +49,3 @@ def step(action: ActionRequest):
 @app.get("/state")
 def state():
     return env.state
-
-
-# ---------------- INFERENCE RUNNER ---------------- #
-
-def run_agent_once():
-    from inference import run
-    time.sleep(2)  # wait for server startup
-    run()
-
-
-# 🔥 THIS IS THE IMPORTANT PART
-@app.on_event("startup")
-def startup_event():
-    threading.Thread(target=run_agent_once, daemon=True).start()
