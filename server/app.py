@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Fix module path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import uvicorn
 from fastapi import FastAPI
 from email_openenv.environment import EmailOpenEnv
@@ -8,8 +14,6 @@ import time
 
 app = FastAPI()
 env = EmailOpenEnv()
-
-# ---------------- API ---------------- #
 
 @app.get("/")
 def root():
@@ -27,20 +31,13 @@ def step(action: ActionRequest):
 def state():
     return env.state
 
-# ---------------- INFERENCE RUNNER ---------------- #
-
 def run_agent_once():
     from inference import run
-    time.sleep(2)  # wait for server to be ready
+    time.sleep(2)
     run()
 
-# ---------------- START ---------------- #
-
 def main():
-    # Run agent ONLY ONCE in background
     threading.Thread(target=run_agent_once, daemon=True).start()
-
-    # Start API server
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
