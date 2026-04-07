@@ -1,86 +1,108 @@
 import os
-from openai import OpenAI
+from typing import List
+
 from email_openenv.environment import EmailOpenEnv
 from email_openenv.tasks import TASKS
 
-# --- ENV ---
+
 API_BASE_URL = os.getenv("API_BASE_URL")
+MODEL_NAME = os.getenv("MODEL_NAME", "rule-based")
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL = os.getenv("MODEL_NAME")
-
-if not HF_TOKEN:
-    raise ValueError("HF_TOKEN not set")
-
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=HF_TOKEN,
-)
 
 
-def normalize_reward(r):
-    if r is None:
-        return 0.0
-    if r < 0:
-        return 0.0
-    if r > 1:
-        return 1.0
-    return float(r)
+# ---------- LOGGING (STRICT FORMAT) ---------- #
 
+def log_start(task: str, env: str, model: str):
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: str):
+    done_val = str(done).lower()
+    error_val = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]):
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
+        flush=True,
+    )
+
+
+# ---------- RULE-BASED POLICY (STABLE) ---------- #
+
+def decide_action(email: str, step: int):
+    # Follow your env flow: classify → route → reply → resolve
+    if step == 1:
+        return {"type": "classify"}
+    elif step == 2:
+        return {"type": "route"}
+    elif step == 3:
+        return {"type": "reply"}
+    else:
+        return {"type": "resolve"}
+
+
+# ---------- MAIN ---------- #
 
 def run():
     for task in TASKS:
-        print(f"[START] task={task['id']} env=email_openenv model={MODEL}")
-
         env = EmailOpenEnv()
-        env.reset()
 
-        done = False
-        step_count = 0
         rewards = []
+        steps_taken = 0
+        success = False
 
-        # 🔥 Correct workflow sequence
-        workflow = ["classify", "route", "reply", "resolve"]
+        log_start(task=task["id"], env="email_openenv", model=MODEL_NAME)
 
-        for action_type in workflow:
-            step_count += 1
+        try:
+            result = env.reset()
 
-            # (Optional) LLM call just to satisfy requirement
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=[
-                        {"role": "user", "content": f"Process email: {task['email']}"}
-                    ],
-                    temperature=0
+            for step in range(1, 11):
+                if result.get("done"):
+                    break
+
+                action = decide_action(task["email"], step)
+
+                result = env.step(action)
+
+                reward = result.get("reward", 0.0)
+                reward = max(0.0, min(1.0, reward))  # normalize
+                done = result.get("done", False)
+                error = result.get("observation", {}).get("last_action_error")
+
+                rewards.append(reward)
+                steps_taken = step
+
+                log_step(
+                    step=step,
+                    action=action["type"],
+                    reward=reward,
+                    done=done,
+                    error=error,
                 )
-            except:
-                pass  # ignore — not needed for env
 
-            # ✅ Correct action format
-            action = {"type": action_type}
+                if done:
+                    success = True
+                    break
 
-            result = env.step(action)
+        except Exception as e:
+            print(f"[DEBUG] {str(e)}", flush=True)
 
-            reward = normalize_reward(result.get("reward", 0))
-            done = result.get("done", False)
+        finally:
+            score = sum(rewards) / len(rewards) if rewards else 0.0
+            score = max(0.0, min(1.0, score))
 
-            rewards.append(reward)
-
-            print(
-                f"[STEP] task={task['id']} step={step_count} "
-                f"action={action_type} reward={reward:.2f} done={done} error=null"
+            log_end(
+                success=success,
+                steps=steps_taken,
+                score=score,
+                rewards=rewards,
             )
-
-            if done:
-                break
-
-        score = sum(rewards) / len(rewards) if rewards else 0.0
-        score = normalize_reward(score)
-
-        print(
-            f"[END] task={task['id']} success={done} "
-            f"steps={step_count} score={score:.2f}"
-        )
 
 
 if __name__ == "__main__":
