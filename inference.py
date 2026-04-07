@@ -44,13 +44,7 @@ def get_intent(email: str):
         response = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Classify the email intent. "
-                        "Return ONLY one word: reset, refund, or investigate."
-                    ),
-                },
+                {"role": "system", "content": "Classify intent: reset, refund, or investigate. One word."},
                 {"role": "user", "content": email},
             ],
             temperature=0,
@@ -66,7 +60,6 @@ def get_intent(email: str):
             return "investigate"
 
     except Exception:
-        # 🔥 fallback (important for stability)
         if "refund" in email:
             return "refund"
         elif "login" in email or "password" in email:
@@ -75,17 +68,72 @@ def get_intent(email: str):
             return "investigate"
 
 
-# ---------- POLICY ---------- #
+# ---------- STRICT LLM POLICY ---------- #
 
-def decide_action(step):
-    if step == 1:
-        return {"type": "classify"}
-    elif step == 2:
-        return {"type": "route"}
-    elif step == 3:
-        return {"type": "reply"}
-    else:
-        return {"type": "resolve"}
+def decide_action_llm(email, intent, step, history, last_action):
+    # STRICT FSM — no shortcuts
+    flow = {
+        None: ["classify"],
+        "classify": ["route"],
+        "route": ["reply"],
+        "reply": ["resolve"],
+        "resolve": []
+    }
+
+    valid_actions = flow.get(last_action, ["classify"])
+
+    # Few-shot examples (safe + aligned)
+    examples = """
+Example:
+Email: "Refund my money"
+Intent: refund
+Steps: classify → route → reply → resolve
+
+Email: "Forgot password"
+Intent: reset
+Steps: classify → route → reply → resolve
+"""
+
+    try:
+        prompt = f"""
+You are an email handling agent.
+
+{examples}
+
+Current Task:
+Email: {email}
+Intent: {intent}
+
+Step: {step}
+History: {history}
+Previous action: {last_action}
+
+Allowed actions: {valid_actions}
+
+Rules:
+- Follow exact sequence
+- Do not skip steps
+- Do not repeat invalid actions
+- Move forward toward resolve
+
+Return ONLY one action.
+"""
+
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
+
+        action = response.choices[0].message.content.strip().lower()
+
+        if action not in valid_actions:
+            return valid_actions[0]
+
+        return action
+
+    except Exception:
+        return valid_actions[0]
 
 
 # ---------- MAIN ---------- #
@@ -97,20 +145,26 @@ def run():
         rewards = []
         steps_taken = 0
         success = False
+        history = []
+        last_action = None
 
         log_start(task["id"], "email_openenv", MODEL)
 
         try:
             result = env.reset()
+            email = task["email"]
 
-            # 🔥 LLM used here
-            intent = get_intent(task["email"])
+            intent = get_intent(email)
 
             for step in range(1, 11):
                 if result.get("done"):
                     break
 
-                action = decide_action(step)
+                action_type = decide_action_llm(
+                    email, intent, step, history, last_action
+                )
+
+                action = {"type": action_type}
 
                 result = env.step(action)
 
@@ -121,7 +175,13 @@ def run():
                 rewards.append(reward)
                 steps_taken = step
 
-                log_step(step, action["type"], reward, done, error)
+                log_step(step, action_type, reward, done, error)
+
+                # update only if valid
+                if not error:
+                    last_action = action_type
+
+                history.append(f"{action_type}:{reward:.2f}")
 
                 if done:
                     success = True
