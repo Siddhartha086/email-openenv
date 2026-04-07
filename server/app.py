@@ -3,8 +3,13 @@ from fastapi import FastAPI
 from email_openenv.environment import EmailOpenEnv
 from email_openenv.models import ActionRequest
 
+import threading
+import time
+
 app = FastAPI()
 env = EmailOpenEnv()
+
+# ---------------- API ---------------- #
 
 @app.get("/")
 def root():
@@ -22,12 +27,21 @@ def step(action: ActionRequest):
 def state():
     return env.state
 
+# ---------------- INFERENCE RUNNER ---------------- #
 
-# ✅ THIS IS WHAT VALIDATOR WANTS
+def run_agent_once():
+    from inference import run
+    time.sleep(2)  # wait for server to be ready
+    run()
+
+# ---------------- START ---------------- #
+
 def main():
+    # Run agent ONLY ONCE in background
+    threading.Thread(target=run_agent_once, daemon=True).start()
+
+    # Start API server
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
-
-# ✅ Required for execution
 if __name__ == "__main__":
     main()
