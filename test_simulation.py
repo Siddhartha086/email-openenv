@@ -1,12 +1,47 @@
 import subprocess
 import re
 
-NUM_RUNS = 5
 
-scores = []
-steps_list = []
+def parse_output(output: str):
+    lines = output.strip().splitlines()
 
-pattern = r"\[END\].*score=([0-9.]+).*steps=([0-9]+)"
+    start_found = False
+    steps = []
+    score = None
+    total_steps = None
+
+    for line in lines:
+        line = line.strip()
+
+        # START
+        if line.startswith("[START]"):
+            start_found = True
+
+        # STEP
+        elif line.startswith("[STEP]"):
+            step_match = re.search(r"step=(\d+)\s+reward=([0-9.]+)", line)
+            if step_match:
+                steps.append({
+                    "step": int(step_match.group(1)),
+                    "reward": float(step_match.group(2))
+                })
+
+        # END
+        elif line.startswith("[END]"):
+            end_match = re.search(r"score=([0-9.]+)\s+steps=(\d+)", line)
+            if end_match:
+                score = float(end_match.group(1))
+                total_steps = int(end_match.group(2))
+
+    # VALIDATION
+    if not start_found or score is None or total_steps is None:
+        return None
+
+    return {
+        "score": score,
+        "steps": total_steps,
+        "step_details": steps
+    }
 
 
 def run_once():
@@ -18,31 +53,32 @@ def run_once():
 
     output = result.stdout
 
-    match = re.search(pattern, output)
+    parsed = parse_output(output)
 
-    if match:
-        score = float(match.group(1))
-        steps = int(match.group(2))
-        return score, steps, output
+    if parsed:
+        return parsed["score"], parsed["steps"], output
     else:
         return None, None, output
 
 
-def main():
-    print("🔍 Running Simulation...\n")
+def run_simulation(n=5):
+    scores = []
+    steps_list = []
 
-    for i in range(NUM_RUNS):
-        score, steps, output = run_once()
+    print("Running Simulation...\n")
 
+    for i in range(n):
         print(f"Run {i+1}:")
 
-        if score is not None:
-            print(f"  Score: {score}, Steps: {steps}")
+        score, steps, output = run_once()
+
+        if score is None:
+            print("❌ Failed to parse output")
+            print(output)
+        else:
+            print(f"Score: {score}, Steps: {steps}")
             scores.append(score)
             steps_list.append(steps)
-        else:
-            print("  ❌ Failed to parse output")
-            print(output)
 
         print("-" * 40)
 
@@ -53,11 +89,11 @@ def main():
         print(f"Max Score: {max(scores)}")
         print(f"All Scores: {scores}")
 
-        if min(scores) < 2.0:
-            print("\n⚠️ WARNING: Some runs have low scores")
-        else:
+        if min(scores) >= 2.5:
             print("\n✅ Stable performance — Ready to submit")
+        else:
+            print("\n⚠️ Performance unstable — Review logic")
 
 
 if __name__ == "__main__":
-    main()
+    run_simulation()
