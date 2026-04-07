@@ -1,143 +1,68 @@
-import requests
 import os
-import sys
+from openai import OpenAI
+from email_openenv.environment import EmailOpenEnv
+from email_openenv.tasks import TASKS
 
-
-
-if os.environ.get("RUN_ONCE") == "1":
-    sys.exit(0)
-
-
-# 🔹 PREVENT DOUBLE EXECUTION (HF issue fix)
-if hasattr(sys, "_already_ran"):
-    exit()
-sys._already_ran = True
-
-# 🔹 ENV VARIABLES (STRICT COMPLIANCE)
-API_BASE_URL = os.getenv(
-    "API_BASE_URL",
-    "https://sidtheslayer-email-openenv-agent.hf.space"
+client = OpenAI(
+    base_url=os.getenv("API_BASE_URL"),
+    api_key=os.getenv("HF_TOKEN"),
 )
 
-# ❗ FORCE MODEL NAME (avoid LLM mismatch issues)
-MODEL_NAME = "rule-based-agent"
-
-# ❗ NO DEFAULT (IMPORTANT)
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-BASE_URL = API_BASE_URL
-
-TASK_NAME = "email_handling"
-ENV_NAME = "email_openenv"
-
-
-def safe_post(url, payload=None):
-    try:
-        if payload:
-            return requests.post(url, json=payload, timeout=5).json()
-        else:
-            return requests.post(url, timeout=5).json()
-    except Exception:
-        return None
+MODEL = os.getenv("MODEL_NAME")
 
 
 def run():
-    print(f"[START] task={TASK_NAME} env={ENV_NAME} model={MODEL_NAME}", flush=True)
+    for task in TASKS:
+        print(f"[START] task={task['id']} env=email_openenv model={MODEL}")
 
-    rewards = []
-    step_count = 0
-    success = False
+        try:
+            env = EmailOpenEnv(task=task)
+        except:
+            env = EmailOpenEnv()
 
-    try:
-        data = safe_post(f"{BASE_URL}/reset")
+        state = env.reset()
 
-        # 🔥 FALLBACK (CRITICAL FOR VALIDATOR)
-        if not data:
-            fallback_rewards = [0.30, 0.50, 0.70, 1.00]
+        done = False
+        step_count = 0
+        rewards = []
 
-            for i, r in enumerate(fallback_rewards, 1):
-                print(
-                    f"[STEP] step={i} action=auto reward={r:.2f} "
-                    f"done={'true' if i == len(fallback_rewards) else 'false'} error=null",
-                    flush=True
-                )
-
-            avg_score = sum(fallback_rewards) / len(fallback_rewards)
-
-            print(
-                f"[END] success=true steps={len(fallback_rewards)} "
-                f"score={avg_score:.2f} rewards=0.30,0.50,0.70,1.00",
-                flush=True
-            )
-            return
-
-        obs = data["observation"]
-        done = data["done"]
-
-        while not done:
-            action_type = obs["available_actions"][0]
-            action = {"type": action_type}
-
-            # 🔹 RULE-BASED LOGIC
-            if action_type == "classify":
-                action["label"] = "billing"
-            elif action_type == "route":
-                action["department"] = "billing"
-            elif action_type == "reply":
-                action["response"] = "We are resolving your issue"
-            elif action_type == "resolve":
-                pass
-
-            result = safe_post(f"{BASE_URL}/step", action)
-
-            if not result:
-                break
-
-            obs = result["observation"]
-            reward = float(result.get("reward", 0))
-            done = result.get("done", False)
-            error = result.get("last_action_error")
-
+        while not done and step_count < 10:
             step_count += 1
+
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an email assistant."},
+                        {"role": "user", "content": f"Email: {task['email']}. What action?"}
+                    ]
+                )
+                action_text = response.choices[0].message.content.lower()
+            except:
+                action_text = "auto"
+
+            # LLM-based mapping
+            if "refund" in action_text:
+                action = {"action": "refund"}
+            elif "reset" in action_text or "password" in action_text:
+                action = {"action": "reset"}
+            elif "fix" in action_text or "issue" in action_text:
+                action = {"action": "investigate"}
+            else:
+                action = {"action": "auto"}
+
+            result = env.step(action)
+
+            reward = result.get("reward", 0)
+            done = result.get("done", False)
+
             rewards.append(reward)
 
-            print(
-                f"[STEP] step={step_count} action={action_type} "
-                f"reward={reward:.2f} done={str(done).lower()} "
-                f"error={error if error else 'null'}",
-                flush=True
-            )
+            print(f"[STEP] task={task['id']} step={step_count} action={action['action']} reward={reward:.2f} done={done} error=null")
 
-        if rewards:
-            score = sum(rewards) / len(rewards)
-            success = True
-        else:
-            score = 0.0
+        score = sum(rewards) / len(rewards) if rewards else 0
 
-    except Exception:
-        # 🔥 FAIL-SAFE FALLBACK
-        fallback_rewards = [0.30, 0.50, 0.70, 1.00]
-
-        for i, r in enumerate(fallback_rewards, 1):
-            print(
-                f"[STEP] step={i} action=auto reward={r:.2f} "
-                f"done={'true' if i == len(fallback_rewards) else 'false'} error=null",
-                flush=True
-            )
-
-        print(
-            f"[END] success=true steps=4 score=0.62 rewards=0.30,0.50,0.70,1.00",
-            flush=True
-        )
-        return
-
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-
-    print(
-        f"[END] success={str(success).lower()} steps={step_count} "
-        f"score={score:.2f} rewards={rewards_str}",
-        flush=True
-    )
+        print(f"[END] task={task['id']} success={done} steps={step_count} score={score:.2f}")
 
 
 if __name__ == "__main__":
