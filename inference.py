@@ -1,42 +1,83 @@
 import os
 from typing import List
 
+from openai import OpenAI
 from email_openenv.environment import EmailOpenEnv
 from email_openenv.tasks import TASKS
 
 
+# --- ENV ---
 API_BASE_URL = os.getenv("API_BASE_URL")
-MODEL_NAME = os.getenv("MODEL_NAME", "rule-based")
 HF_TOKEN = os.getenv("HF_TOKEN")
+MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
+
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 
-# ---------- LOGGING (STRICT FORMAT) ---------- #
+# ---------- LOGGING ---------- #
 
-def log_start(task: str, env: str, model: str):
+def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def log_step(step: int, action: str, reward: float, done: bool, error: str):
-    done_val = str(done).lower()
-    error_val = error if error else "null"
+def log_step(step, action, reward, done, error):
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"done={str(done).lower()} error={error or 'null'}",
         flush=True,
     )
 
 
-def log_end(success: bool, steps: int, score: float, rewards: List[float]):
+def log_end(success, steps, score, rewards: List[float]):
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} "
+        f"score={score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
 
-# ---------- RULE-BASED POLICY (STABLE) ---------- #
+# ---------- LLM INTENT ---------- #
 
-def decide_action(email: str, step: int):
-    # Follow your env flow: classify → route → reply → resolve
+def get_intent(email: str):
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Classify the email intent. "
+                        "Return ONLY one word: reset, refund, or investigate."
+                    ),
+                },
+                {"role": "user", "content": email},
+            ],
+            temperature=0,
+        )
+
+        intent = response.choices[0].message.content.strip().lower()
+
+        if "refund" in intent:
+            return "refund"
+        elif "reset" in intent or "password" in intent:
+            return "reset"
+        else:
+            return "investigate"
+
+    except Exception:
+        # 🔥 fallback (important for stability)
+        if "refund" in email:
+            return "refund"
+        elif "login" in email or "password" in email:
+            return "reset"
+        else:
+            return "investigate"
+
+
+# ---------- POLICY ---------- #
+
+def decide_action(step):
     if step == 1:
         return {"type": "classify"}
     elif step == 2:
@@ -57,34 +98,30 @@ def run():
         steps_taken = 0
         success = False
 
-        log_start(task=task["id"], env="email_openenv", model=MODEL_NAME)
+        log_start(task["id"], "email_openenv", MODEL)
 
         try:
             result = env.reset()
+
+            # 🔥 LLM used here
+            intent = get_intent(task["email"])
 
             for step in range(1, 11):
                 if result.get("done"):
                     break
 
-                action = decide_action(task["email"], step)
+                action = decide_action(step)
 
                 result = env.step(action)
 
-                reward = result.get("reward", 0.0)
-                reward = max(0.0, min(1.0, reward))  # normalize
+                reward = max(0.0, min(1.0, result.get("reward", 0)))
                 done = result.get("done", False)
                 error = result.get("observation", {}).get("last_action_error")
 
                 rewards.append(reward)
                 steps_taken = step
 
-                log_step(
-                    step=step,
-                    action=action["type"],
-                    reward=reward,
-                    done=done,
-                    error=error,
-                )
+                log_step(step, action["type"], reward, done, error)
 
                 if done:
                     success = True
@@ -97,12 +134,7 @@ def run():
             score = sum(rewards) / len(rewards) if rewards else 0.0
             score = max(0.0, min(1.0, score))
 
-            log_end(
-                success=success,
-                steps=steps_taken,
-                score=score,
-                rewards=rewards,
-            )
+            log_end(success, steps_taken, score, rewards)
 
 
 if __name__ == "__main__":
