@@ -12,7 +12,7 @@ def root():
     return {"status": "API is running"}
 
 
-# RESET (FIXED ✅ — optional body)
+# RESET
 @app.post("/reset")
 def reset(payload: dict = Body(default={})):
     return env.reset(**payload)
@@ -28,3 +28,13 @@ def step(action: ActionRequest):
 @app.get("/state")
 def state():
     return env.state
+
+
+# 🔥 REQUIRED FOR VALIDATOR
+def main():
+    import uvicorn
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
