@@ -19,15 +19,21 @@ def get_headers():
 
 
 def reset_env(task: str) -> Dict:
-    r = requests.post(f"{API_BASE}/reset", json={"task": task}, headers=get_headers())
-    r.raise_for_status()
-    return r.json()
+    try:
+        r = requests.post(f"{API_BASE}/reset", json={"task": task}, headers=get_headers(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return {}
 
 
 def step_env(payload: Dict) -> Dict:
-    r = requests.post(f"{API_BASE}/step", json=payload, headers=get_headers())
-    r.raise_for_status()
-    return r.json()
+    try:
+        r = requests.post(f"{API_BASE}/step", json=payload, headers=get_headers(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return {"reward": 0, "done": True}
 
 
 def classify_email(email: str) -> str:
@@ -55,15 +61,18 @@ def route_email(category: str) -> str:
 
 
 def generate_response(email: str, category: str) -> str:
-    res = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": "You are a professional customer support agent. Write a concise, empathetic, helpful reply. No subject lines or placeholders. Just the email body."},
-            {"role": "user", "content": f"Customer email: {email}\nCategory: {category}\nWrite a support response:"}
-        ],
-        temperature=0.2,
-    )
-    return res.choices[0].message.content.strip()
+    try:
+        res = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are a professional customer support agent. Write a concise, empathetic, helpful reply. No subject lines or placeholders. Just the email body."},
+                {"role": "user", "content": f"Customer email: {email}\nCategory: {category}\nWrite a support response:"}
+            ],
+            temperature=0.2,
+        )
+        return res.choices[0].message.content.strip()
+    except Exception:
+        return "Thank you for contacting us. We are looking into your issue and will get back to you shortly."
 
 
 def run_agent(task: str):
