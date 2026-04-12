@@ -125,7 +125,7 @@ def run_agent(task: str):
             break
 
     score = rewards[-1] if rewards else 0.0
-    print(f"[END] success=true steps={step} score={score:.2f} rewards={','.join(f'{r:.2f}' for r in rewards)}", flush=True)
+    print(f"[END] task={task} success=true steps={step} score={score:.2f} rewards={','.join(f'{r:.2f}' for r in rewards)}", flush=True)
 
 
 if __name__ == "__main__":
