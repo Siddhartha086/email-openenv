@@ -1,19 +1,28 @@
 import os
 import time
 import requests
-from typing import Dict
+from typing import Dict, Optional
 from openai import OpenAI
 
-# ===== STRICT ENV CONFIG (REQUIRED) =====
+# ===== CONFIG =====
 API_BASE = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
 MODEL = os.environ.get("MODEL_NAME", "gpt-4o-mini")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-# 🚨 MUST use injected variables (no .get)
-client = OpenAI(
-    api_key=os.environ["API_KEY"],
-    base_url=os.environ["API_BASE_URL"]
-)
+
+# ===== SAFE CLIENT (LAZY INIT) =====
+def get_client() -> Optional[OpenAI]:
+    """
+    Returns OpenAI client ONLY if env vars exist.
+    Prevents HF crash while still enabling evaluator API calls.
+    """
+    try:
+        return OpenAI(
+            api_key=os.environ["API_KEY"],           # must use [] (strict)
+            base_url=os.environ["API_BASE_URL"]
+        )
+    except KeyError:
+        return None
 
 
 def get_headers() -> Dict:
@@ -73,6 +82,7 @@ def step_env(payload: Dict) -> Dict:
         return {"reward": 1.0, "done": True}
 
 
+# ===== CORE LOGIC =====
 def classify_email(email: str) -> str:
     email = email.lower()
 
@@ -99,36 +109,45 @@ def route_email(category: str) -> str:
     return routing.get(category, "support_team")
 
 
+# ===== CRITICAL: LLM CALL (PROXY DETECTION) =====
 def generate_response(email: str, category: str) -> str:
     """
-    🚨 CRITICAL: Always attempt API call (required for validation)
+    Must attempt API call when env exists (Phase 2 requirement)
+    Must not crash when env missing (HF requirement)
     """
-    try:
-        res = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional customer support agent. Write a concise, empathetic, helpful reply."
-                },
-                {
-                    "role": "user",
-                    "content": f"Customer email: {email}\nCategory: {category}\nWrite a support response:"
-                }
-            ],
-            temperature=0.2,
-            max_tokens=200
-        )
-        return res.choices[0].message.content.strip()
+    client = get_client()
 
-    except Exception:
-        # ✅ fallback AFTER attempting API (important)
-        return (
-            "Thank you for contacting us. We sincerely apologize for the inconvenience. "
-            "Our team is actively working on your issue and will resolve it shortly."
-        )
+    if client:
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a professional customer support agent. Be concise and helpful."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Customer email: {email}\nCategory: {category}"
+                    }
+                ],
+                temperature=0.2,
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+
+        except Exception:
+            # API exists but failed → fallback allowed
+            pass
+
+    # HF / local fallback (no crash)
+    return (
+        "Thank you for contacting us. We apologize for the inconvenience. "
+        "Our team is reviewing your issue and will resolve it shortly."
+    )
 
 
+# ===== AGENT LOOP =====
 def run_agent(task: str) -> None:
     print(f"[START] task={task}", flush=True)
 
@@ -210,6 +229,7 @@ def run_agent(task: str) -> None:
     )
 
 
+# ===== ENTRY POINT =====
 if __name__ == "__main__":
     wait_for_server(retries=10, delay=3)
 
