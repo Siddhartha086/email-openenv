@@ -1,201 +1,208 @@
 import os
-from typing import List
-
+import requests
+from typing import Dict
 from openai import OpenAI
-from email_openenv.environment import EmailOpenEnv
-from email_openenv.tasks import TASKS
+
+# ===== ENV =====
+API_BASE = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
+MODEL = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# --- ENV ---
-API_BASE_URL = os.getenv("API_BASE_URL")
-HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
-
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-
-
-# ---------- LOGGING ---------- #
-
-def log_start(task, env, model):
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+# ===== HEADERS =====
+def get_headers():
+    headers = {"Content-Type": "application/json"}
+    if HF_TOKEN:
+        headers["Authorization"] = f"Bearer {HF_TOKEN}"
+    return headers
 
 
-def log_step(step, action, reward, done, error):
-    print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} "
-        f"done={str(done).lower()} error={error or 'null'}",
-        flush=True,
+# ===== ENV =====
+def reset_env(task: str) -> Dict:
+    r = requests.post(
+        f"{API_BASE}/reset",
+        json={"task": task},
+        headers=get_headers()
     )
+    r.raise_for_status()
+    data = r.json()
+    print(f"[RESET] {data}")
+    return data
 
 
-def log_end(success, steps, score, rewards: List[float]):
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(
-        f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.2f} rewards={rewards_str}",
-        flush=True,
+def step_env(payload: Dict) -> Dict:
+    r = requests.post(
+        f"{API_BASE}/step",
+        json=payload,
+        headers=get_headers()
     )
+    if not r.ok:
+        print(f"[HTTP {r.status_code}] {r.json()}")
+        r.raise_for_status()
+    return r.json()
 
 
-# ---------- LLM INTENT ---------- #
-
-def get_intent(email: str):
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "Classify intent: reset, refund, or investigate. One word."},
-                {"role": "user", "content": email},
-            ],
-            temperature=0,
-        )
-
-        intent = response.choices[0].message.content.strip().lower()
-
-        if "refund" in intent:
-            return "refund"
-        elif "reset" in intent or "password" in intent:
-            return "reset"
-        else:
-            return "investigate"
-
-    except Exception:
-        if "refund" in email:
-            return "refund"
-        elif "login" in email or "password" in email:
-            return "reset"
-        else:
-            return "investigate"
+# ===== CLASSIFIER =====
+def classify_email(email: str) -> str:
+    email = email.lower()
+    if "payment" in email and ("failed" in email or "deducted" in email):
+        return "payment_issue"
+    if "refund" in email:
+        return "refund_request"
+    if "bill" in email:
+        return "billing_problem"
+    if "complaint" in email:
+        return "complaint"
+    return "general_query"
 
 
-# ---------- STRICT LLM POLICY ---------- #
-
-def decide_action_llm(email, intent, step, history, last_action):
-    # STRICT FSM — no shortcuts
-    flow = {
-        None: ["classify"],
-        "classify": ["route"],
-        "route": ["reply"],
-        "reply": ["resolve"],
-        "resolve": []
+# ===== ROUTER =====
+def route_email(category: str) -> str:
+    routing = {
+        "payment_issue": "billing_team",
+        "refund_request": "billing_team",
+        "billing_problem": "billing_team",
+        "complaint": "escalation_team",
+        "general_query": "support_team",
     }
-
-    valid_actions = flow.get(last_action, ["classify"])
-
-    # Few-shot examples (safe + aligned)
-    examples = """
-Example:
-Email: "Refund my money"
-Intent: refund
-Steps: classify → route → reply → resolve
-
-Email: "Forgot password"
-Intent: reset
-Steps: classify → route → reply → resolve
-"""
-
-    try:
-        prompt = f"""
-You are an email handling agent.
-
-{examples}
-
-Current Task:
-Email: {email}
-Intent: {intent}
-
-Step: {step}
-History: {history}
-Previous action: {last_action}
-
-Allowed actions: {valid_actions}
-
-Rules:
-- Follow exact sequence
-- Do not skip steps
-- Do not repeat invalid actions
-- Move forward toward resolve
-
-Return ONLY one action.
-"""
-
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-
-        action = response.choices[0].message.content.strip().lower()
-
-        if action not in valid_actions:
-            return valid_actions[0]
-
-        return action
-
-    except Exception:
-        return valid_actions[0]
+    return routing.get(category, "support_team")
 
 
-# ---------- MAIN ---------- #
-
-def run():
-    for task in TASKS:
-        env = EmailOpenEnv()
-
-        rewards = []
-        steps_taken = 0
-        success = False
-        history = []
-        last_action = None
-
-        log_start(task["id"], "email_openenv", MODEL)
-
-        try:
-            result = env.reset()
-            email = task["email"]
-
-            intent = get_intent(email)
-
-            for step in range(1, 11):
-                if result.get("done"):
-                    break
-
-                action_type = decide_action_llm(
-                    email, intent, step, history, last_action
+# ===== RESPONSE GENERATOR =====
+def generate_response(email: str, category: str) -> str:
+    res = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a professional customer support agent. "
+                    "Write a concise, empathetic, helpful reply. "
+                    "No subject lines or placeholders. Just the email body."
                 )
-
-                action = {"type": action_type}
-
-                result = env.step(action)
-
-                reward = max(0.0, min(1.0, result.get("reward", 0)))
-                done = result.get("done", False)
-                error = result.get("observation", {}).get("last_action_error")
-
-                rewards.append(reward)
-                steps_taken = step
-
-                log_step(step, action_type, reward, done, error)
-
-                # update only if valid
-                if not error:
-                    last_action = action_type
-
-                history.append(f"{action_type}:{reward:.2f}")
-
-                if done:
-                    success = True
-                    break
-
-        except Exception as e:
-            print(f"[DEBUG] {str(e)}", flush=True)
-
-        finally:
-            score = sum(rewards) / len(rewards) if rewards else 0.0
-            score = max(0.0, min(1.0, score))
-
-            log_end(success, steps_taken, score, rewards)
+            },
+            {
+                "role": "user",
+                "content": f"Customer email: {email}\nCategory: {category}\nWrite a support response:"
+            }
+        ],
+        temperature=0.2,
+    )
+    return res.choices[0].message.content.strip()
 
 
+# ===== AGENT =====
+def run_agent(task: str):
+    print(f"\n{'='*50}")
+    print(f"[START] task={task}")
+    print(f"{'='*50}")
+
+    obs = reset_env(task)
+    category = None
+
+    for step in range(20):
+        observation = obs.get("observation", obs)
+        email = observation.get("email_content", "")
+        actions = observation.get("available_actions", [])
+        stage = observation.get("current_stage", "unknown")
+        last_error = observation.get("last_action_error")
+
+        print(f"\n[STEP {step}] stage={stage} actions={actions}")
+        if last_error:
+            print(f"[LAST ERROR] {last_error}")
+
+        if not actions:
+            print("[DONE] No more actions")
+            break
+
+        # ===== CLASSIFY =====
+        if "classify" in actions:
+            category = classify_email(email)
+            print(f"[ACTION] classify → {category}")
+            payload = {
+                "type": "classify",
+                "action": "classify",
+                "label": category
+            }
+
+        # ===== ROUTE =====
+        elif "route" in actions:
+            if not category:
+                category = classify_email(email)
+            team = route_email(category)
+            print(f"[ACTION] route → {team}")
+            payload = {
+                "type": "route",
+                "action": "route",
+                "team": team
+            }
+
+        # ===== REPLY =====
+        elif "reply" in actions:
+            if not category:
+                category = classify_email(email)
+            response = generate_response(email, category)
+            print(f"[ACTION] reply → {response[:80]}...")
+            payload = {
+                "type": "reply",
+                "action": "reply",
+                "response": response
+            }
+
+        # ===== RESPOND =====
+        elif "respond" in actions:
+            if not category:
+                category = classify_email(email)
+            response = generate_response(email, category)
+            print(f"[ACTION] respond → {response[:80]}...")
+            payload = {
+                "type": "respond",
+                "action": "respond",
+                "response": response
+            }
+
+        # ===== ESCALATE =====
+        elif "escalate" in actions:
+            print(f"[ACTION] escalate")
+            payload = {
+                "type": "escalate",
+                "action": "escalate"
+            }
+
+        # ===== RESOLVE =====
+        elif "resolve" in actions:
+            print(f"[ACTION] resolve")
+            payload = {
+                "type": "resolve",
+                "action": "resolve"
+            }
+
+        # ===== FALLBACK =====
+        else:
+            action = actions[0]
+            print(f"[ACTION] fallback → {action}")
+            payload = {
+                "type": action,
+                "action": action
+            }
+
+        obs = step_env(payload)
+        reward = obs.get("reward", 0)
+        done = obs.get("done", False)
+        print(f"[RESULT] reward={reward} done={done}")
+
+        if done:
+            print(f"[COMPLETE] Final reward={reward}")
+            break
+
+    else:
+        print("[TIMEOUT] Max steps reached")
+
+
+# ===== MAIN =====
 if __name__ == "__main__":
-    run()
+    for task in ["easy", "medium", "hard"]:
+        run_agent(task)
